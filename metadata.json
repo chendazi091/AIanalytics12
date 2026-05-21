@@ -1,0 +1,6 @@
+{
+  "name": "AI 數據分析與洞察工具",
+  "description": "提供直觀的面版讓您貼上 CSV 報表數據，並透過 Google Gemini 3.5 進行深度的趨勢分析、異常偵測與改善建議，一鍵獲取繁體中文專業洞察報告。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
