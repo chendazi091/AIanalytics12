@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import Markdown from "react-markdown";
 import {
@@ -17,35 +17,11 @@ import {
   Layers,
   ArrowRightLeft,
   X,
-  FileSpreadsheet,
-  Settings,
-  Eye,
-  EyeOff
+  FileSpreadsheet
 } from "lucide-react";
-import { GoogleGenAI } from "@google/genai";
 import { CSV_TEMPLATES, CsvTemplate } from "./data";
 
-const SYSTEM_INSTRUCTION = `你是一位資深的數據分析專家與商業智慧導師。你的任務是協助使用者分析貼上的 CSV 數據報表，提供專業、客觀且具備商業價值的解讀報告。
 
-請務必遵守以下指導原則：
-1. 語言規範：
-   - 必須完全使用繁體中文（台灣習慣用語，例如「數據」、「資料」、「分析」、「欄位」、「指標」、「專案」）進行回答。
-   - 語氣必須專業、嚴謹、富有洞察力，切忌浮誇與空洞內容。
-
-2. 格式化輸出：
-   - 輸出格式必須清晰優雅，充分利用 Markdown 語法。
-   - 使用 Markdown 標題、粗體、清單與引用區塊來組織長篇段落，使其高可讀性。
-   - 建議根據合適的數據指標，整理出重點摘要表格。
-
-3. 專業分析架構（視數據類型與欄位動態調整，但應涵蓋以下核心面向）：
-   - 【數據總覽】：一目了然的關鍵指標（KPI）摘要，對統計特徵（如總和、平均值、最大値/最小值值、整體趨勢等）進行總和重點描述。
-   - 【關鍵趨勢與發現】：指出資料中的核心脈絡、時間規律、增長點或衰退趨勢。
-   - 【異常偵測與風險診斷】：找出資料中不合理、極端、有隱憂或潛在問題之處（例如突然暴跌/暴增的數據、空白無效欄位、不匹配指標）。
-   - 【具體行動與優化策略】：根據數據優化空間，提供明晰、可口、具體有商業可行性的改善策略建議。
-
-4. 健全性檢查：
-   - 所有的推論、趨勢判斷與百分比計算皆需基於使用者提供的 CSV 數據本身，拒絕無中生有的虛構數據。
-   - 若使用者提供的 CSV 格式不佳或數據存在缺漏，請在開頭簡潔有禮地提示，並儘可能就現有可信數據進行客觀分析。`;
 
 export default function App() {
   // 1. Data States
@@ -66,21 +42,7 @@ export default function App() {
   const [previewPage, setPreviewPage] = useState<number>(0);
   const ROWS_PER_PAGE = 8;
 
-  // 4. API Key States
-  const [apiKey, setApiKey] = useState<string>(() => {
-    const saved = localStorage.getItem("GEMINI_API_KEY");
-    if (saved) return saved;
-    // Fallback to environment variables
-    return (import.meta.env.VITE_GEMINI_API_KEY || import.meta.env.GEMINI_API_KEY || "");
-  });
-  const [showSettings, setShowSettings] = useState<boolean>(false);
-  const [tempApiKey, setTempApiKey] = useState<string>(apiKey);
-  const [showPassword, setShowPassword] = useState<boolean>(false);
 
-  // Synchronize temp state when apiKey is updated elsewhere
-  useEffect(() => {
-    setTempApiKey(apiKey);
-  }, [apiKey]);
 
   // Real-time parsed CSV data
   const parsedData = useMemo(() => {
@@ -140,16 +102,10 @@ export default function App() {
     setActiveTab("preview");
   };
 
-  // Trigger professional analysis API
+  // Trigger professional analysis API via Netlify Function backend proxy
   const handleAnalyze = async () => {
     if (!csvInput.trim()) {
       setErrorMsg("請輸入或點選載入有效的 CSV 數據資料後再進行分析。");
-      return;
-    }
-
-    if (!apiKey.trim()) {
-      setErrorMsg("請先設定您的 Gemini API Key。請點擊右上角的「設定密鑰」按鈕進行配置。");
-      setShowSettings(true);
       return;
     }
 
@@ -163,7 +119,7 @@ export default function App() {
       "正在進行數據結構解析與完整性檢查...",
       "正在對關鍵統計特徵（合計值、平均數、分布情況）進行彙整計算...",
       "正在向 Google Gemini 3.5 載入 System Instructions 商業模型規則...",
-      "正在由 AI 解析行銷、營運、銷售特徵，撰寫繁繁中高質量洞察報告..."
+      "正在由 AI 解析行銷、營運、銷售特徵，撰寫繁體中高質量洞察報告..."
     ];
 
     let currentStep = 0;
@@ -177,57 +133,33 @@ export default function App() {
     }, 1500);
 
     try {
-      // Map interactive analysis type to friendly Traditional Chinese terms
-      let typeLabel = "全面性核心分析與洞察";
-      if (analysisType === "trends") {
-        typeLabel = "關鍵趨勢預測與規律探索";
-      } else if (analysisType === "anomalies") {
-        typeLabel = "異常檢測與潛在風險診斷報告";
-      } else if (analysisType === "actionable") {
-        typeLabel = "以數據為導向的落地優化策略與行動建議";
-      }
-
-      // Build precise user query prompt
-      let userPrompt = `請分析以下提供的 CSV 數據資料：\n\n\`\`\`csv\n${csvInput}\n\`\`\`\n\n`;
-      userPrompt += `【分析焦點方向】：${typeLabel}\n`;
-      
-      if (customGoal && customGoal.trim() !== "") {
-        userPrompt += `【使用者特別關注的目標或疑問】：\n> ${customGoal}\n\n`;
-      }
-      
-      userPrompt += `請依據上述的 System Instruction 指導原則，為此 CSV 數據撰寫一份極具洞察力的分析報告。`;
-
-      // Initialize GoogleGenAI client directly client-side
-      const ai = new GoogleGenAI({
-        apiKey: apiKey,
-        httpOptions: {
-          headers: {
-            "User-Agent": "aistudio-build",
-          },
-        },
-      });
-
-      const response = await ai.models.generateContent({
-        model: "gemini-3.5-flash",
-        contents: userPrompt,
-        config: {
-          systemInstruction: SYSTEM_INSTRUCTION,
-          temperature: 0.25, // Lower temperature for more factual, precise data analysis
-        },
+      const res = await fetch("/.netlify/functions/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          csvData: csvInput,
+          analysisType,
+          customGoal: customGoal.trim() || undefined,
+        }),
       });
 
       clearInterval(interval);
 
-      const resultText = response.text;
-      if (!resultText) {
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "伺服器回應異常，請稍後再試。");
+      }
+
+      if (!data.report) {
         throw new Error("Gemini 模型返回了空內容。");
       }
 
-      setAnalysisReport(resultText);
+      setAnalysisReport(data.report);
     } catch (err: any) {
       clearInterval(interval);
       console.error(err);
-      setErrorMsg(err?.message || "伺服器通訊超時或無效，請確認 Gemini 密鑰已填寫且具備額度。");
+      setErrorMsg(err?.message || "伺服器通訊超時或無效，請稍後再試。");
     } finally {
       setLoading(false);
       setLoadingStep("");
@@ -305,20 +237,9 @@ export default function App() {
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-slate-300 bg-white/5 border border-white/10 px-2.5 py-1 rounded-md font-mono hidden md:inline-flex items-center gap-1.5 backdrop-blur-md">
-              <span className={`w-2.5 h-2.5 rounded-full ${apiKey ? "bg-emerald-400 animate-pulse" : "bg-rose-450 animate-pulse"}`}></span>
-              API 狀態：{apiKey ? "已配置" : "未設定密鑰"}
+              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Netlify 後端代理模式
             </span>
-            <button
-              onClick={() => {
-                setTempApiKey(apiKey);
-                setShowSettings(true);
-              }}
-              className="p-2 bg-white/5 border border-white/10 hover:bg-white/10 text-slate-300 hover:text-white rounded-xl transition-colors cursor-pointer flex items-center gap-1.5 backdrop-blur-md shadow-md"
-              title="設定 Gemini API 密鑰"
-            >
-              <Settings className="h-4 w-4" />
-              <span className="text-xs font-semibold hidden sm:inline">設定密鑰</span>
-            </button>
           </div>
         </div>
       </header>
@@ -868,91 +789,13 @@ export default function App() {
           </div>
           <div className="flex gap-4 items-center font-mono text-[10px]">
             <span>前端架構：React + Vite + Tailwind CSS</span>
-            <span>運行環境：Google AI Studio Client Mode</span>
+            <span>運行環境：Netlify Functions + Gemini 3.5 Flash</span>
           </div>
         </footer>
 
       </main>
 
-      {/* Glassmorphic Settings Modal */}
-      <AnimatePresence>
-        {showSettings && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md">
-            <motion.div
-              initial={{ scale: 0.95, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-md bg-slate-900/90 border border-white/15 p-6 rounded-2xl shadow-2xl flex flex-col gap-4 relative overflow-hidden text-slate-100 font-sans"
-            >
-              {/* Mesh background inside modal */}
-              <div className="absolute top-[-20%] left-[-20%] w-[60%] h-[60%] bg-indigo-650/10 rounded-full blur-[80px] pointer-events-none"></div>
-              
-              <div className="flex justify-between items-center z-10">
-                <h3 className="text-base font-bold text-white flex items-center gap-2">
-                  <Settings className="w-5 h-5 text-indigo-400 animate-spin-slow" />
-                  設定 Gemini API 密鑰
-                </h3>
-                <button
-                  onClick={() => setShowSettings(false)}
-                  className="text-slate-400 hover:text-white p-1 rounded-lg transition-colors cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
 
-              <div className="text-xs text-slate-300 leading-relaxed z-10 space-y-1">
-                <p>請輸入您的 Google AI Studio API Key。本金鑰僅儲存於您的本機瀏覽器（LocalStorage）中，直接向 Google Gemini 發送請求，安全無虞。</p>
-                <a 
-                  href="https://aistudio.google.com/app/apikey" 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="text-indigo-400 hover:text-indigo-300 hover:underline font-semibold inline-flex items-center gap-1 mt-1"
-                >
-                  前往 Google AI Studio 獲取免費的 API Key <ChevronRight className="w-3 h-3" />
-                </a>
-              </div>
-
-              <div className="relative z-10">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={tempApiKey}
-                  onChange={(e) => setTempApiKey(e.target.value)}
-                  placeholder="請在此貼上您的 API Key (AIzaSy...)"
-                  className="w-full bg-black/40 border border-white/10 rounded-xl p-3.5 pr-11 text-xs font-mono text-slate-200 placeholder:text-slate-650 outline-none focus:border-indigo-505/40 transition-all shadow-inner"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3.5 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-200 p-1 cursor-pointer"
-                >
-                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                </button>
-              </div>
-
-              <div className="flex gap-3 justify-end mt-2 z-10">
-                <button
-                  onClick={() => {
-                    setTempApiKey("");
-                  }}
-                  className="py-2 px-4 rounded-xl border border-white/5 bg-white/5 hover:bg-white/10 text-xs text-slate-300 font-semibold cursor-pointer transition-all"
-                >
-                  清除輸入
-                </button>
-                <button
-                  onClick={() => {
-                    setApiKey(tempApiKey);
-                    localStorage.setItem("GEMINI_API_KEY", tempApiKey.trim());
-                    setShowSettings(false);
-                  }}
-                  className="py-2 px-5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs text-white font-bold cursor-pointer transition-all shadow-md shadow-indigo-600/25"
-                >
-                  儲存設定
-                </button>
-              </div>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
 
     </div>
   );
